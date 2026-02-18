@@ -10,6 +10,13 @@ interface CallLanguageConfig {
     receiver: string; // Language of the receiver (e.g., 'en')
 }
 
+enum CallState {
+    LISTENING = 'LISTENING',
+    PROCESSING = 'PROCESSING',
+    SPEAKING = 'SPEAKING',
+    INTERRUPTED = 'INTERRUPTED'
+}
+
 export class AIPeerService {
     public pc: RTCPeerConnection;
     private stt: STTService;
@@ -40,6 +47,21 @@ export class AIPeerService {
     private isInterrupted = false;
     private lastPartialResponse = ""; // Store the text before interruption
     private lastInterruptedQuestion = ""; // Store the question that was being answered
+
+    private state: CallState = CallState.LISTENING;
+    private silenceTimer: any = null;
+    private transcriptBuffer: string = "";
+    private readonly SILENCE_THRESHOLD = 2500; // 2.5 seconds as requested (2-3s)
+
+    // Distance-Based Filtering Constants
+    private readonly VOLUME_THRESHOLD_DB = -25; // dB
+    private readonly DURATION_THRESHOLD_MS = 500; // ms
+    private readonly CONFIDENCE_THRESHOLD = 0.85;
+
+    // Distance-Based Filtering State
+    private userSpeechStartTime: number | null = null;
+    private currentMaxConfidence = 0;
+    private lastAudioLevelDb = -100;
 
     constructor(callId: string = 'default') {
         console.log("[AI_PEER] Initializing AIPeerService...");
@@ -144,51 +166,79 @@ export class AIPeerService {
                     }
                     this.stt.sendAudio(rtp.payload);
 
+                    // Volume Calculation (dB)
+                    const db = this.calculateDb(rtp.payload);
+                    this.lastAudioLevelDb = db;
+
                     // Robust Silero VAD Interruption
                     const isSpeech = await this.vad.processAudio(rtp.payload);
                     if (isSpeech) {
-                        this.handleInterruption();
+                        if (!this.userSpeechStartTime) {
+                            this.userSpeechStartTime = Date.now();
+                        }
+
+                        const duration = Date.now() - this.userSpeechStartTime;
+
+                        // Professional Interruption Rule:
+                        // 1. Audio Level > -25dB (Close to mic)
+                        // 2. Speech Duration > 500ms (Validate utterance)
+                        // 3. (Confidence is verified in STT event)
+                        if (db > this.VOLUME_THRESHOLD_DB && duration > this.DURATION_THRESHOLD_MS) {
+                            console.log(`[AI_PEER] Valid Interruption: Vol=${db.toFixed(1)}dB, Dur=${duration}ms`);
+                            this.handleInterruption();
+                        } else {
+                            // Track but don't interrupt yet
+                            if (duration % 200 === 0) { // Log occasionally
+                                console.log(`[AI_PEER] User speaking (wait): Vol=${db.toFixed(1)}dB, Dur=${duration}ms`);
+                            }
+                        }
+                    } else {
+                        this.userSpeechStartTime = null;
                     }
                 });
             }
         };
 
-        // Handle transcripts — translation pipeline
-        // Rely exclusively on Silero VAD for interruption to avoid noisy Deepgram "speech_started" triggers
+        // Handle transcripts
         this.stt.on("transcript", async (text) => {
             const cleanText = text.trim();
             if (!cleanText) return;
 
-            // If we already started speculatively for this text, skip
-            if (this.isTranslationActive && cleanText === this.lastProcessedTranscript) {
-                console.log("[AI_PEER] Skipping final transcript (already processing speculatively)");
-                return;
-            }
+            console.log("[AI_PEER] STT Transcript Update:", cleanText);
+            this.transcriptBuffer = cleanText;
 
-            console.log("[AI_PEER] STT Final Transcript:", cleanText);
-            this.lastProcessedTranscript = cleanText;
-            await this.handleTranslation(cleanText);
+            // Re-start silence timer on every transcript update to ensure we wait for the full thought
+            this.startSilenceTimer();
         });
 
-        // VAD-BASED SPECULATIVE START: Trigger translation the EXACT moment voice stops
-        this.stt.on("speech_ended", async (interimText: string) => {
-            const cleanText = interimText?.trim();
+        // VAD-BASED SPEECH EVENTS
+        this.stt.on("speech_started", () => {
+            console.log("[AI_PEER] User speech detected. Resetting silence timer.");
+            this.clearSilenceTimer();
+        });
 
-            // Only trigger if we have content and aren't already processing
-            if (cleanText && !this.isTranslationActive) {
-                console.log(`[AI_PEER] Speculative translation start: "${cleanText}"`);
-                this.lastProcessedTranscript = cleanText;
-                await this.handleTranslation(cleanText);
-            } else if (!this.isTranslationActive) {
-                // Wait slightly before playing filler to see if stream starts
-                setTimeout(() => {
-                    if (!this.isTranslationActive) {
-                        const fillers = ['Hmm,', 'Yeah,', 'Right,', 'Okay,', 'Mm-hmm,'];
-                        const filler = fillers[Math.floor(Math.random() * fillers.length)];
-                        console.log(`[AI_PEER] VAD Instant filler: "${filler}"`);
-                        this.tts.streamTTS(filler, this.callLanguages.receiver);
-                    }
-                }, 300);
+        this.stt.on("speech_ended", async (interimText: string) => {
+            console.log("[AI_PEER] User stopped speaking. Starting silence timer...");
+            if (interimText) {
+                this.transcriptBuffer = interimText.trim();
+            }
+            this.startSilenceTimer();
+            // Reset speech tracking
+            this.userSpeechStartTime = null;
+        });
+
+        this.stt.on("transcript_metadata", (data: any) => {
+            if (data?.confidence) {
+                this.currentMaxConfidence = Math.max(this.currentMaxConfidence, data.confidence);
+
+                // If we haven't interrupted yet but have high confidence and high volume, trigger it
+                if (this.state === CallState.SPEAKING &&
+                    this.currentMaxConfidence > this.CONFIDENCE_THRESHOLD &&
+                    this.lastAudioLevelDb > this.VOLUME_THRESHOLD_DB) {
+
+                    console.log(`[AI_PEER] High-Confidence Interruption: Conf=${this.currentMaxConfidence.toFixed(2)}, Vol=${this.lastAudioLevelDb.toFixed(1)}dB`);
+                    this.handleInterruption();
+                }
             }
         });
 
@@ -213,8 +263,14 @@ export class AIPeerService {
                     // Logic: Speaking if queue has data AND we aren't in a silence-flush phase
                     if (this.audioQueue.length >= frameSize && !this.isSilencing) {
                         this.isAISpeaking = true;
+                        if (this.state !== CallState.INTERRUPTED) {
+                            this.setState(CallState.SPEAKING);
+                        }
                     } else {
                         this.isAISpeaking = false;
+                        if (this.state === CallState.SPEAKING) {
+                            this.setState(CallState.LISTENING);
+                        }
                     }
 
                     // Notify client on state change
@@ -336,7 +392,73 @@ export class AIPeerService {
             this.sentenceBuffer = "";
             this.isTranslationActive = false;
             this.currentResponseText = "";
+            this.setState(CallState.INTERRUPTED);
         }
+    }
+
+    private setState(newState: CallState) {
+        if (this.state !== newState) {
+            console.log(`[AI_PEER] State Transition: ${this.state} -> ${newState}`);
+            this.state = newState;
+            if (this.controlChannel && this.controlChannel.readyState === "open") {
+                this.controlChannel.send(JSON.stringify({ type: "STATE_CHANGE", state: newState }));
+            }
+
+            // If we transition out of SPEAKING, reset distance state
+            if (newState !== CallState.SPEAKING && newState !== CallState.INTERRUPTED) {
+                this.currentMaxConfidence = 0;
+            }
+        }
+    }
+
+    /**
+     * Calculate Volume in Decibels (dB) from PCMU buffer
+     */
+    private calculateDb(buffer: Buffer): number {
+        let sumSquares = 0;
+        for (let i = 0; i < buffer.length; i++) {
+            // Simple u-law to linear approx (sufficient for RMS)
+            let u = ~buffer[i];
+            let sign = (u & 0x80);
+            let exponent = (u & 0x70) >> 4;
+            let mantissa = (u & 0x0F);
+            let sample = (mantissa << 3) + 132;
+            sample <<= (exponent);
+            sample -= 132;
+            const normalized = (sign ? -sample : sample) / 32768.0;
+            sumSquares += normalized * normalized;
+        }
+        const rms = Math.sqrt(sumSquares / buffer.length);
+        // Avoid log10(0)
+        return 20 * Math.log10(Math.max(rms, 0.00001));
+    }
+
+    private startSilenceTimer() {
+        this.clearSilenceTimer();
+        this.silenceTimer = setTimeout(() => {
+            this.finalizeTurn();
+        }, this.SILENCE_THRESHOLD);
+    }
+
+    private clearSilenceTimer() {
+        if (this.silenceTimer) {
+            clearTimeout(this.silenceTimer);
+            this.silenceTimer = null;
+        }
+    }
+
+    private async finalizeTurn() {
+        const text = this.transcriptBuffer.trim();
+        if (!text) {
+            this.setState(CallState.LISTENING);
+            return;
+        }
+
+        console.log(`[AI_PEER] Silence timeout reached. Processing: "${text}"`);
+        this.lastProcessedTranscript = text;
+        this.transcriptBuffer = "";
+        this.setState(CallState.PROCESSING);
+        await this.handleTranslation(text);
     }
 
     private async handleTranslation(text: string) {
@@ -415,7 +537,7 @@ export class AIPeerService {
 
                 const isSentenceEnd = /[.!?;।؟۔]$/.test(trimmed);
                 const isFirstChunk = fullTranslation.length === trimmed.length;
-                const minWords = isFirstChunk ? 2 : 3;
+                const minWords = isFirstChunk ? 1 : 3;
                 const isClauseEnd = /[,،]/.test(trimmed) && wordCount >= minWords;
                 const isTooLong = wordCount >= 6;
 

@@ -90,11 +90,22 @@ export class STTService extends EventEmitter {
         });
 
         this.connection.on(LiveTranscriptionEvents.Transcript, (data: any) => {
-            const transcript = data.channel.alternatives[0].transcript;
+            const alternative = data.channel.alternatives[0];
+            const transcript = alternative.transcript;
+            const confidence = alternative.confidence;
+
             if (transcript) {
                 this.lastTranscript = transcript;
+
+                // Emit metadata for distance-based filtering
+                this.emit("transcript_metadata", {
+                    confidence: confidence || 0,
+                    is_final: data.is_final,
+                    text: transcript
+                });
+
                 if (data.is_final) {
-                    console.log("[STT] Final transcript:", transcript);
+                    console.log(`[STT] Final transcript: "${transcript}" (Confidence: ${confidence?.toFixed(2)})`);
                     this.emit("transcript", transcript);
                     this.lastTranscript = ""; // Reset after final
                 } else {
