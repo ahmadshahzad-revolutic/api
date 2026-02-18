@@ -53,15 +53,23 @@ export class AIPeerService {
     private transcriptBuffer: string = "";
     private readonly SILENCE_THRESHOLD = 1500; // Reduced from 2.5s to 1.5s for snappier response
 
-    // Distance-Based Filtering Constants
-    private readonly VOLUME_THRESHOLD_DB = -25; // dB
-    private readonly DURATION_THRESHOLD_MS = 500; // ms
+    // Distance-Based Filtering Constants (Professional Tier Zones)
+    private readonly ZONE_A_DB = -15;       // Zone A: Loud/Close speaker
+    private readonly ZONE_A_DUR = 200;      // Zone A: Only 200ms needed
+    private readonly ZONE_B_DB = -25;       // Zone B: Normal speaker
+    private readonly ZONE_B_DUR = 500;      // Zone B: 500ms needed
     private readonly CONFIDENCE_THRESHOLD = 0.85;
+    private readonly NOISE_GATE_DB = -45;   // Ignore anything quieter than this (dB)
+
+    // Latency Constants
+    private readonly FAST_SILENCE_THRESHOLD = 500;   // 500ms for final transcripts
+    private readonly NORMAL_SILENCE_THRESHOLD = 1500; // 1.5s for interim thoughts
 
     // Distance-Based Filtering State
     private userSpeechStartTime: number | null = null;
     private currentMaxConfidence = 0;
     private lastAudioLevelDb = -100;
+    private peakVolumeThisUtterance = -100;
 
     constructor(callId: string = 'default') {
         console.log("[AI_PEER] Initializing AIPeerService...");
@@ -175,22 +183,36 @@ export class AIPeerService {
                     if (isSpeech) {
                         if (!this.userSpeechStartTime) {
                             this.userSpeechStartTime = Date.now();
+                            this.peakVolumeThisUtterance = db;
                         }
 
+                        this.peakVolumeThisUtterance = Math.max(this.peakVolumeThisUtterance, db);
+                        this.lastAudioLevelDb = db;
                         const duration = Date.now() - this.userSpeechStartTime;
 
-                        // Professional Interruption Rule:
-                        // 1. Audio Level > -25dB (Close to mic)
-                        // 2. Speech Duration > 500ms (Validate utterance)
-                        // 3. (Confidence is verified in STT event)
-                        if (db > this.VOLUME_THRESHOLD_DB && duration > this.DURATION_THRESHOLD_MS) {
-                            console.log(`[AI_PEER] Valid Interruption: Vol=${db.toFixed(1)}dB, Dur=${duration}ms`);
+                        // Professional Zone-Based Rule:
+                        // Zone A (Close/Loud): >-15dB -> 200ms
+                        // Zone B (Normal): >-25dB -> 500ms
+
+                        let isInsideZone = false;
+                        let targetDuration = this.ZONE_B_DUR;
+                        let zoneLabel = "B";
+
+                        if (db > this.ZONE_A_DB) {
+                            isInsideZone = true;
+                            targetDuration = this.ZONE_A_DUR;
+                            zoneLabel = "A (Close)";
+                        } else if (db > this.ZONE_B_DB) {
+                            isInsideZone = true;
+                            targetDuration = this.ZONE_B_DUR;
+                            zoneLabel = "B (Normal)";
+                        }
+
+                        if (isInsideZone && duration > targetDuration) {
+                            console.log(`[AI_PEER] Valid Interruption [Zone ${zoneLabel}]: Vol=${db.toFixed(1)}dB, Dur=${duration}ms`);
                             this.handleInterruption();
-                        } else {
-                            // Track but don't interrupt yet
-                            if (duration % 200 === 0) { // Log occasionally
-                                console.log(`[AI_PEER] User speaking (wait): Vol=${db.toFixed(1)}dB, Dur=${duration}ms`);
-                            }
+                        } else if (isInsideZone && duration % 200 === 0) {
+                            console.log(`[AI_PEER] User speaking (Zone ${zoneLabel}): Vol=${db.toFixed(1)}dB, Dur=${duration}ms`);
                         }
                     } else {
                         this.userSpeechStartTime = null;
@@ -204,16 +226,22 @@ export class AIPeerService {
             const cleanText = text.trim();
             if (!cleanText) return;
 
-            console.log("[AI_PEER] STT Transcript Update:", cleanText);
+            console.log(`[AI_PEER] STT Final Transcript: "${cleanText}" (Peak Vol: ${this.peakVolumeThisUtterance.toFixed(1)}dB)`);
             this.transcriptBuffer = cleanText;
 
-            // Re-start silence timer on every transcript update to ensure we wait for the full thought
-            this.startSilenceTimer();
+            // Fast-track: if we have a final transcript, respond in 500ms
+            this.startSilenceTimer(true);
         });
 
         // VAD-BASED SPEECH EVENTS
         this.stt.on("speech_started", () => {
-            console.log("[AI_PEER] User speech detected. Resetting silence timer.");
+            // Noise Gate: Ignore background noise triggers
+            if (this.lastAudioLevelDb < this.NOISE_GATE_DB) {
+                console.log(`[AI_PEER] Ignoring noisy speech_started: Vol=${this.lastAudioLevelDb.toFixed(1)}dB`);
+                return;
+            }
+
+            console.log(`[AI_PEER] User speech detected (Vol: ${this.lastAudioLevelDb.toFixed(1)}dB). Resetting silence timer.`);
             this.clearSilenceTimer();
         });
 
@@ -231,13 +259,18 @@ export class AIPeerService {
             if (data?.confidence) {
                 this.currentMaxConfidence = Math.max(this.currentMaxConfidence, data.confidence);
 
-                // If we haven't interrupted yet but have high confidence and high volume, trigger it
+                // If we haven't interrupted yet but have high confidence and are in a volume zone, trigger it
                 if (this.state === CallState.SPEAKING &&
                     this.currentMaxConfidence > this.CONFIDENCE_THRESHOLD &&
-                    this.lastAudioLevelDb > this.VOLUME_THRESHOLD_DB) {
+                    this.lastAudioLevelDb > this.ZONE_B_DB) {
 
                     console.log(`[AI_PEER] High-Confidence Interruption: Conf=${this.currentMaxConfidence.toFixed(2)}, Vol=${this.lastAudioLevelDb.toFixed(1)}dB`);
                     this.handleInterruption();
+                }
+
+                // If this is an interim result, reset the normal silence timer (1.5s)
+                if (!data.is_final && data.text) {
+                    this.startSilenceTimer(false);
                 }
             }
         });
@@ -433,11 +466,12 @@ export class AIPeerService {
         return 20 * Math.log10(Math.max(rms, 0.00001));
     }
 
-    private startSilenceTimer() {
+    private startSilenceTimer(isFinal: boolean = false) {
         this.clearSilenceTimer();
+        const delay = isFinal ? this.FAST_SILENCE_THRESHOLD : this.NORMAL_SILENCE_THRESHOLD;
         this.silenceTimer = setTimeout(() => {
             this.finalizeTurn();
-        }, this.SILENCE_THRESHOLD);
+        }, delay);
     }
 
     private clearSilenceTimer() {

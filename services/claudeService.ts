@@ -13,7 +13,8 @@ export const anthropic = new Anthropic({
 export const TRANSLATOR_SYSTEM_PROMPT = `You are a helpful human on a phone call. 
 Your goal is to be a natural conversational partner. 
 - Maintain continuity: Use the provided context to ensure your responses flow logically from previous turns.
-- Handle Interruptions: If you were interrupted, acknowledge the user's new input while seamlessly tying it back to what you were saying or the previous topic if still relevant.
+- Handle Interruptions: If you were interrupted, you will be provided with what you were saying and the user's new input. Your priority is to address the user's new input while seamlessly connecting it to what you were previously saying or the topic under discussion.
+- Acknowledge and Pivot: Briefly acknowledge the user's interruption (e.g., "Ah, I see," or "Sure, let's talk about that instead") if it feels natural, then answer their new point.
 - Response Length: Keep your responses concise, strictly between 2 to 3 lines (sentences). 
 - Versatility: You are capable of handling any scenario with professional, human-like intelligence.
 - Directness: Start with the most relevant information.
@@ -59,21 +60,23 @@ export function createTranslationRequest(
 
   // Handle interruption context
   if (interruptedQuestion && interruptedResponse) {
-    prompt += `[IMPORTANT: You were interrupted while answering: "${interruptedQuestion}"]\n`;
-    prompt += `[You had said: "${interruptedResponse}"... when the user spoke again.]\n`;
-    prompt += `[The user's new input is below. Please provide a comprehensive response that addresses BOTH their previous question and this new input naturally.]\n\n`;
+    prompt += `[CONTEXT: You were interrupted while answering the user's previous question: "${interruptedQuestion}"]\n`;
+    prompt += `[WHAT YOU HAD SAID BEFORE INTERRUPTION: "${interruptedResponse}..."]\n`;
+    prompt += `[USER'S NEW INPUT: "${text}"]\n`;
+    prompt += `[INSTRUCTION: Please provide a response that addresses the user's new input, while naturally closing or pivoting from the previous topic if it's still relevant. Combine the context of both speeches into your answer.]\n\n`;
   } else if (interruptedResponse) {
-    prompt += `[IMPORTANT: You were interrupted while saying: "${interruptedResponse}"...]\n`;
-    prompt += `[The user spoke while you were talking. Address their new input while acknowledging or continuing from where you were if relevant.]\n\n`;
-  }
-
-  // Build the request — keep it minimal for speed
-  if (sourceLang === targetLang || sourceLang === 'auto') {
-    // Same language or auto-detect: just respond naturally
-    prompt += text;
+    prompt += `[CONTEXT: You were interrupted while saying: "${interruptedResponse}..."]\n`;
+    prompt += `[USER'S NEW INPUT: "${text}"]\n`;
+    prompt += `[INSTRUCTION: Address the user's new input. Acknowledge the interruption naturally if appropriate.]\n\n`;
   } else {
-    // Different languages: translate and respond
-    prompt += `[Caller speaks ${sourceLang}, respond in Pakistani Urdu]\n${text}`;
+    // Standard turn: Build the request — keep it minimal for speed
+    if (sourceLang === targetLang || sourceLang === 'auto') {
+      // Same language or auto-detect: just respond naturally
+      prompt += text;
+    } else {
+      // Different languages: translate and respond
+      prompt += `[Caller speaks ${sourceLang}, respond in Pakistani Urdu]\n${text}`;
+    }
   }
 
   return prompt;

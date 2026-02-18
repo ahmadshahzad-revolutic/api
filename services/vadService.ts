@@ -104,7 +104,7 @@ export class VADService {
             }
         }
 
-        return foundSpeechSignal;
+        return this.isSpeechDetected;
     }
 }
 
