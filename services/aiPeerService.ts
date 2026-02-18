@@ -6,8 +6,8 @@ import { createTranslationStream, translateText } from "./claudeService";
 import { DEEPGRAM_API_KEY, ELEVENLABS_API_KEY } from "../config/env";
 
 interface CallLanguageConfig {
-    caller: string;   // Language of the caller (e.g., 'ur', 'hi', 'es', 'auto')
-    receiver: string; // Language of the receiver (e.g., 'en')
+    caller: string;
+    receiver: string;
 }
 
 enum CallState {
@@ -52,27 +52,25 @@ export function createAIPeerService(callId: string = 'default'): AIPeerService {
     let controlChannel: any = null;
     let isSilencing = false;
     let lastInterruptionTime = 0;
-    let currentResponseText = ""; // Track what the AI is currently saying
+    let currentResponseText = "";
     let isInterrupted = false;
-    let lastPartialResponse = ""; // Store the text before interruption
-    let lastInterruptedQuestion = ""; // Store the question that was being answered
+    let lastPartialResponse = "";
+    let lastInterruptedQuestion = "";
 
     let state: CallState = CallState.LISTENING;
     let silenceTimer: any = null;
     let transcriptBuffer: string = "";
-    const SILENCE_THRESHOLD = 1500; // Reduced from 2.5s to 1.5s for snappier response
-
     // Distance-Based Filtering Constants (Professional Tier Zones)
-    const ZONE_A_DB = -15;       // Zone A: Loud/Close speaker
-    const ZONE_A_DUR = 200;      // Zone A: Only 200ms needed
-    const ZONE_B_DB = -25;       // Zone B: Normal speaker
-    const ZONE_B_DUR = 500;      // Zone B: 500ms needed
+    const ZONE_A_DB = -15;
+    const ZONE_A_DUR = 200;
+    const ZONE_B_DB = -25;
+    const ZONE_B_DUR = 500;
     const CONFIDENCE_THRESHOLD = 0.85;
-    const NOISE_GATE_DB = -45;   // Ignore anything quieter than this (dB)
+    const NOISE_GATE_DB = -45;
 
     // Latency Constants
-    const FAST_SILENCE_THRESHOLD = 500;   // 500ms for final transcripts
-    const NORMAL_SILENCE_THRESHOLD = 1500; // 1.5s for interim thoughts
+    const FAST_SILENCE_THRESHOLD = 500;
+    const NORMAL_SILENCE_THRESHOLD = 1500;
 
     // Distance-Based Filtering State
     let userSpeechStartTime: number | null = null;
@@ -113,9 +111,7 @@ export function createAIPeerService(callId: string = 'default'): AIPeerService {
     // Create DataChannel for control messages
     controlChannel = pc.createDataChannel("control");
 
-    /**
-     * Initialize call with language configuration
-     */
+    // Initialize call with language configuration
     const initializeCall = (clrLang: string = 'en', rcvLang: string = 'en', clrName: string = 'User') => {
         callerName = clrName;
         callLanguages = {
@@ -132,9 +128,8 @@ export function createAIPeerService(callId: string = 'default'): AIPeerService {
         console.log(`[AI_PEER] Call ${callId} initialized: ${clrLang} ↔ ${rcvLang}`);
     };
 
-    /**
-     * Update languages mid-call
-     */
+
+    // Update languages mid-call
     const updateCallLanguages = (clrLang: string, rcvLang: string) => {
         callLanguages = {
             caller: clrLang,

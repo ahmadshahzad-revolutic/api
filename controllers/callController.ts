@@ -55,9 +55,6 @@ export const getCallHistory = async (req: AuthRequest, res: Response) => {
         const mappedCalls = calls.map(call => {
             const callObj = call.toObject();
             const currentUserId = req.user?.id;
-
-            // Determine direction relative to the request owner
-            // If the user is the caller, it's outgoing. Otherwise, it's incoming.
             const isCaller = callObj.caller?._id?.toString() === currentUserId;
             callObj.direction = isCaller ? 'outgoing' : 'incoming';
 

@@ -6,14 +6,13 @@ export const sessionConfig = session({
     secret: 'revolutic-session-secret',
     resave: false,
     saveUninitialized: false,
-    // proxy: true,
     store: MongoStore.create({
         mongoUrl: MONGO_URI,
         collectionName: 'sessions'
     }),
     cookie: {
-        maxAge: 1000 * 60 * 60 * 24 * 7, // 7 days
-        secure: false, // Set to false for local HTTP
+        maxAge: 1000 * 60 * 60 * 24 * 7,
+        secure: false,
         sameSite: 'lax',
         httpOnly: true
     }

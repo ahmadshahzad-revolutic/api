@@ -48,8 +48,6 @@ export const chatHandler = async (req: Request, res: Response): Promise<void> =>
         let errorMessage = 'Internal Server Error';
 
         if (error.status === 404) {
-            // If Anthropic returns 404, it means model not found or invalid URL, 
-            // we return 502 to avoid client thinking the /chat route is missing
             statusCode = 502;
             errorMessage = `Upstream API Error (404): ${error.message}`;
         } else if (error.status) {

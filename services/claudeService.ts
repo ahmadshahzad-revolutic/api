@@ -5,11 +5,7 @@ export const anthropic = new Anthropic({
   apiKey: CLAUDE_API_KEY,
 });
 
-/**
- * System prompt for the AI calling agent.
- * The agent RESPONDS conversationally like a real human on the phone.
- * It also translates when needed, but primarily acts as a natural conversational partner.
- */
+// System prompt for the AI calling agent.
 export const TRANSLATOR_SYSTEM_PROMPT = `You are a helpful human on a phone call. 
 Your goal is to be a natural conversational partner. 
 - Maintain continuity: Use the provided context to ensure your responses flow logically from previous turns.
@@ -36,9 +32,7 @@ Example:
   "reply": "I'm doing well, thank you! How can I help you today?"
 }`;
 
-/**
- * Create translation request message with context
- */
+// Create translation request message with context
 export function createTranslationRequest(
   text: string,
   sourceLang: string = 'auto',
@@ -82,10 +76,8 @@ export function createTranslationRequest(
   return prompt;
 }
 
-/**
- * Create a streaming Claude response (for WebRTC real-time pipeline)
- * Optimized for LOW LATENCY — short max_tokens, high temperature for naturalness
- */
+
+// Create a streaming Claude response (for WebRTC real-time pipeline)
 export const createTranslationStream = (
   text: string,
   targetLang: string,
@@ -99,8 +91,8 @@ export const createTranslationStream = (
 
   return anthropic.messages.stream({
     model: CLAUDE_MODEL_NAME,
-    max_tokens: 150,        // Increased to ensure full Urdu sentences are not cut off
-    temperature: 0.3,      // Faster token selection
+    max_tokens: 150,
+    temperature: 0.3,
     system: TRANSLATOR_SYSTEM_PROMPT,
     messages: [
       ...history,
@@ -110,9 +102,7 @@ export const createTranslationStream = (
 };
 
 
-/**
- * Non-streaming translation (fallback)
- */
+// Non-streaming translation (fallback)
 export const translateText = async (
   text: string,
   targetLang: string,
@@ -125,7 +115,7 @@ export const translateText = async (
 
   const response = await anthropic.messages.create({
     model: CLAUDE_MODEL_NAME,
-    max_tokens: 200,        // Increased for fallback completeness
+    max_tokens: 200,
     temperature: 0.4,
     system: TRANSLATOR_SYSTEM_PROMPT,
     messages: [
@@ -140,9 +130,9 @@ export const translateText = async (
   return { translation, latency };
 };
 
-/**
- * Create stream for JSON-based /chat endpoint (legacy)
- */
+
+
+// Create stream for JSON-based /chat endpoint (legacy)
 export const createStream = (message: string, history: any[]) => {
   return anthropic.messages.stream({
     model: CLAUDE_MODEL_NAME,
@@ -158,4 +148,3 @@ export const createStream = (message: string, history: any[]) => {
 
 export { CLAUDE_MODEL_NAME };
 
-console.log(`Claude Service Initialized with model: ${CLAUDE_MODEL_NAME}`);
