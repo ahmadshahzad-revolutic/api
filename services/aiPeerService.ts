@@ -51,7 +51,7 @@ export class AIPeerService {
     private state: CallState = CallState.LISTENING;
     private silenceTimer: any = null;
     private transcriptBuffer: string = "";
-    private readonly SILENCE_THRESHOLD = 2500; // 2.5 seconds as requested (2-3s)
+    private readonly SILENCE_THRESHOLD = 1500; // Reduced from 2.5s to 1.5s for snappier response
 
     // Distance-Based Filtering Constants
     private readonly VOLUME_THRESHOLD_DB = -25; // dB

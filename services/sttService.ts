@@ -59,7 +59,7 @@ export class STTService extends EventEmitter {
             language: this.language,
             encoding: "mulaw",
             sample_rate: 8000,
-            endpointing: 300,        // Increased to 300ms for more stable conversational flow
+            endpointing: 150,        // Further reduced for lower latency
             utterance_timeout: 10000, // Force close utterances after 10s of noise
             interim_results: true,
         };
