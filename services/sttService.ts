@@ -25,38 +25,39 @@ const DEEPGRAM_LANGUAGE_MAP: Record<string, string> = {
     'auto': 'ur', // default fallback for Urdu-first experience
 };
 
-export class STTService extends EventEmitter {
-    private deepgram;
-    private connection: any;
-    private language: string;
+export interface STTService extends EventEmitter {
+    setLanguage(language: string): void;
+    start(): Promise<void>;
+    sendAudio(chunk: Buffer): void;
+    stop(): void;
+}
 
-    constructor(apiKey: string, language: string = 'ur') {
-        super();
-        console.log(`[STT] Initializing Deepgram with key length: ${apiKey?.length}`);
-        this.deepgram = createClient(apiKey);
-        this.language = DEEPGRAM_LANGUAGE_MAP[language] || language;
-    }
+export function createSTTService(apiKey: string, language: string = 'ur'): STTService {
+    const emitter = new EventEmitter();
+    console.log(`[STT] Initializing Deepgram with key length: ${apiKey?.length}`);
+    const deepgram = createClient(apiKey);
+    let currentLanguage = DEEPGRAM_LANGUAGE_MAP[language] || language;
+    let connection: any;
+    let lastTranscript: string = "";
 
     /**
      * Update the language for STT (e.g., when caller language is detected or changed)
      */
-    setLanguage(language: string) {
-        this.language = DEEPGRAM_LANGUAGE_MAP[language] || language;
-        console.log(`[STT] Language updated to: ${this.language}`);
-    }
+    const setLanguage = (language: string) => {
+        currentLanguage = DEEPGRAM_LANGUAGE_MAP[language] || language;
+        console.log(`[STT] Language updated to: ${currentLanguage}`);
+    };
 
-    private lastTranscript: string = "";
-
-    async start() {
-        console.log(`[STT] Starting Deepgram connection with language: ${this.language}...`);
+    const start = async () => {
+        console.log(`[STT] Starting Deepgram connection with language: ${currentLanguage}...`);
 
         // Use Nova-3 for Urdu as Nova-2 doesn't support it for streaming
-        const isUrdu = this.language.startsWith('ur');
+        const isUrdu = currentLanguage.startsWith('ur');
         const model = isUrdu ? "nova-3" : "nova-2";
 
         const options: any = {
             model,
-            language: this.language,
+            language: currentLanguage,
             encoding: "mulaw",
             sample_rate: 8000,
             endpointing: 150,        // Further reduced for lower latency
@@ -65,40 +66,40 @@ export class STTService extends EventEmitter {
         };
 
         // Only enable advanced features for English to be safe
-        if (this.language.startsWith('en')) {
+        if (currentLanguage.startsWith('en')) {
             options.smart_format = true;
             options.vad_events = true;
         }
 
-        this.connection = this.deepgram.listen.live(options);
+        connection = deepgram.listen.live(options);
 
-        this.connection.on(LiveTranscriptionEvents.Open, () => {
+        connection.on(LiveTranscriptionEvents.Open, () => {
             console.log("[STT] Deepgram connection opened");
-            this.emit("open");
+            emitter.emit("open");
         });
 
         // Trigger 'speech_started' the moment voice is detected for barge-in
-        this.connection.on(LiveTranscriptionEvents.SpeechStarted, (data: any) => {
+        connection.on(LiveTranscriptionEvents.SpeechStarted, (data: any) => {
             console.log("[STT] SpeechStarted (User started speaking)");
-            this.emit("speech_started");
+            emitter.emit("speech_started");
         });
 
         // Trigger 'speech_ended' with the latest transcript we have
-        this.connection.on(LiveTranscriptionEvents.UtteranceEnd, (data: any) => {
+        connection.on(LiveTranscriptionEvents.UtteranceEnd, (data: any) => {
             console.log("[STT] UtteranceEnd (VAD detected silence)");
-            this.emit("speech_ended", this.lastTranscript);
+            emitter.emit("speech_ended", lastTranscript);
         });
 
-        this.connection.on(LiveTranscriptionEvents.Transcript, (data: any) => {
+        connection.on(LiveTranscriptionEvents.Transcript, (data: any) => {
             const alternative = data.channel.alternatives[0];
             const transcript = alternative.transcript;
             const confidence = alternative.confidence;
 
             if (transcript) {
-                this.lastTranscript = transcript;
+                lastTranscript = transcript;
 
                 // Emit metadata for distance-based filtering
-                this.emit("transcript_metadata", {
+                emitter.emit("transcript_metadata", {
                     confidence: confidence || 0,
                     is_final: data.is_final,
                     text: transcript
@@ -106,36 +107,44 @@ export class STTService extends EventEmitter {
 
                 if (data.is_final) {
                     console.log(`[STT] Final transcript: "${transcript}" (Confidence: ${confidence?.toFixed(2)})`);
-                    this.emit("transcript", transcript);
-                    this.lastTranscript = ""; // Reset after final
+                    emitter.emit("transcript", transcript);
+                    lastTranscript = ""; // Reset after final
                 } else {
-                    this.emit("interim", transcript);
+                    emitter.emit("interim", transcript);
                 }
             }
         });
 
-        this.connection.on(LiveTranscriptionEvents.Error, (err: any) => {
+        connection.on(LiveTranscriptionEvents.Error, (err: any) => {
             console.error("[STT] Deepgram error detail:", JSON.stringify(err, null, 2));
             if (err.message) console.error("[STT] Error message:", err.message);
             if (err.status) console.error("[STT] Status code:", err.status);
-            this.emit("error", err);
+            emitter.emit("error", err);
         });
 
-        this.connection.on(LiveTranscriptionEvents.Close, () => {
+        connection.on(LiveTranscriptionEvents.Close, () => {
             console.log("[STT] Deepgram connection closed");
-            this.emit("close");
+            emitter.emit("close");
         });
-    }
+    };
 
-    sendAudio(chunk: Buffer) {
-        if (this.connection && this.connection.getReadyState() === 1) {
-            this.connection.send(chunk);
+    const sendAudio = (chunk: Buffer) => {
+        if (connection && connection.getReadyState() === 1) {
+            connection.send(chunk);
         }
-    }
+    };
 
-    stop() {
-        if (this.connection) {
-            this.connection.finish();
+    const stop = () => {
+        if (connection) {
+            connection.finish();
         }
-    }
+    };
+
+    return Object.assign(emitter, {
+        setLanguage,
+        start,
+        sendAudio,
+        stop
+    }) as STTService;
 }
+

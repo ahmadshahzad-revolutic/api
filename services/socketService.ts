@@ -1,6 +1,6 @@
 import { Server } from 'socket.io';
 import http from 'http';
-import { AIPeerService } from './aiPeerService';
+import { AIPeerService, createAIPeerService } from './aiPeerService';
 
 export const setupSocket = (server: http.Server) => {
     const io = new Server(server, {
@@ -33,7 +33,7 @@ export const setupSocket = (server: http.Server) => {
             if (to === '10') {
                 console.log(`[SIGNAL] AI Call detected from ${from}`);
                 try {
-                    const aiPeer = new AIPeerService(from);
+                    const aiPeer = createAIPeerService(from);
                     aiPeers.set(from, aiPeer);
 
                     // Initialize with language configuration

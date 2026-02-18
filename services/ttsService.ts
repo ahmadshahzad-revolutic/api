@@ -31,130 +31,63 @@ const ELEVENLABS_VOICE_MAP: Record<string, string> = {
     'male': 'pNInz6obpgDQGcFmaJgB',       // Adam
 };
 
-export class TTSService extends EventEmitter {
-    private deepgram: any;
-    private elevenLabs: any;
-    private provider: 'auto' | 'elevenlabs' | 'deepgram';
-    private defaultVoice: string;
-    private ttsMutex: Promise<void> = Promise.resolve();
-    private currentAbortController: AbortController | null = null;
-    private downsampleLeftover: Buffer = Buffer.alloc(0);
+export interface TTSService extends EventEmitter {
+    getVoiceForLanguage(language: string): string;
+    streamTTS(text: string, language?: string): Promise<void>;
+    stop(): void;
+    getProvider(): string;
+    setProvider(provider: 'auto' | 'elevenlabs' | 'deepgram'): void;
+}
 
-    constructor(
-        deepgramApiKey: string,
-        elevenLabsApiKey?: string,
-        voice: string = "aura-asteria-en"
-    ) {
-        super();
-        this.defaultVoice = voice;
-        // Default to Deepgram for maximum performance
-        this.provider = 'deepgram';
+export function createTTSService(
+    deepgramApiKey: string,
+    elevenLabsApiKey?: string,
+    voice: string = "aura-asteria-en"
+): TTSService {
+    const emitter = new EventEmitter();
+    let provider: 'auto' | 'elevenlabs' | 'deepgram' = 'deepgram';
+    let ttsMutex: Promise<void> = Promise.resolve();
+    let currentAbortController: AbortController | null = null;
+    let deepgram: any;
+    let elevenLabs: any;
 
-        // Initialize Deepgram
-        console.log(`[TTS] Initializing Deepgram Aura TTS...`);
-        this.deepgram = createClient(deepgramApiKey);
+    // Initialize Deepgram
+    console.log(`[TTS] Initializing Deepgram Aura TTS...`);
+    deepgram = createClient(deepgramApiKey);
 
-        // Initialize ElevenLabs if possible
-        if (elevenLabsApiKey && !elevenLabsDisabled && process.env.ENABLE_ELEVENLABS === 'true') {
-            try {
-                const { ElevenLabsClient } = require('elevenlabs');
-                this.elevenLabs = new ElevenLabsClient({
-                    apiKey: elevenLabsApiKey
-                });
-                console.log('[TTS] ElevenLabs initialized as primary provider');
-            } catch (error: any) {
-                console.error('[TTS] ElevenLabs init failed:', error.message);
-                this.provider = 'deepgram';
-            }
-        } else {
-            console.log('[TTS] Deepgram fallback mode active (ElevenLabs disabled)');
-            this.provider = 'deepgram';
+    // Initialize ElevenLabs if possible
+    if (elevenLabsApiKey && !elevenLabsDisabled && process.env.ENABLE_ELEVENLABS === 'true') {
+        try {
+            const { ElevenLabsClient } = require('elevenlabs');
+            elevenLabs = new ElevenLabsClient({
+                apiKey: elevenLabsApiKey
+            });
+            console.log('[TTS] ElevenLabs initialized as primary provider');
+        } catch (error: any) {
+            console.error('[TTS] ElevenLabs init failed:', error.message);
+            provider = 'deepgram';
         }
+    } else {
+        console.log('[TTS] Deepgram fallback mode active (ElevenLabs disabled)');
+        provider = 'deepgram';
     }
 
     /**
      * Get appropriate voice model for a language
      */
-    getVoiceForLanguage(language: string): string {
+    const getVoiceForLanguage = (language: string): string => {
         return DEEPGRAM_VOICE_MAP[language] || 'aura-asteria-en';
-    }
-
-    /**
-     * Synthesize — uses Deepgram directly (or ElevenLabs if available and working)
-     * Emits "audio" chunks and "end" event
-     */
-    async streamTTS(text: string, language: string = 'en') {
-        process.stdout.write(`[TTS] Requesting synthesis: "${text.substring(0, 30)}..."\r`);
-
-        // Sequence requests to prevent audio chunk interleaving
-        this.ttsMutex = this.ttsMutex.then(async () => {
-            // Create a new AbortController for this stream
-            this.currentAbortController = new AbortController();
-            const signal = this.currentAbortController.signal;
-
-            try {
-                // Try ElevenLabs primarily
-                if (!elevenLabsDisabled && (this.provider === 'elevenlabs' || this.provider === 'auto') && this.elevenLabs) {
-                    try {
-                        await this.streamWithElevenLabs(text, language, signal);
-                        return;
-                    } catch (error: any) {
-                        if (error.name === 'AbortError') throw error;
-                        console.error('[TTS] ElevenLabs failed, falling back to Deepgram:', error.message);
-                        if (error.status === 401 || error.status === 429) {
-                            elevenLabsDisabled = true;
-                        }
-                    }
-                }
-
-                if (signal.aborted) return;
-
-                // Deepgram (fallback) with stream timeout protection
-                const deepgramPromise = this.streamWithDeepgram(text, language, signal);
-                const timeoutPromise = new Promise((_, reject) =>
-                    setTimeout(() => reject(new Error('Deepgram TTS Stream Timeout')), 10000)
-                );
-
-                await Promise.race([deepgramPromise, timeoutPromise]);
-
-            } catch (error: any) {
-                if (error.name === 'AbortError') {
-                    console.log('[TTS] Stream aborted intentionally');
-                } else if (error.message === 'Deepgram TTS Stream Timeout') {
-                    console.error('[TTS] Deepgram synthesis timed out, breaking mutex');
-                } else {
-                    console.error('[TTS] Stream error:', error);
-                }
-            } finally {
-                this.currentAbortController = null;
-            }
-        });
-
-        return this.ttsMutex;
-    }
-
-    /**
-     * Stop any ongoing synthesis immediately
-     */
-    stop() {
-        if (this.currentAbortController) {
-            console.log('[TTS] Aborting current synthesis');
-            this.currentAbortController.abort();
-            this.currentAbortController = null;
-        }
-        // We can't easily "clear" a promise chain, but subsequent calls 
-        // will check the mutex. We just need to make sure the current one stops emitting audio.
-    }
+    };
 
     /**
      * ElevenLabs streaming synthesis
      */
-    private async streamWithElevenLabs(text: string, language: string, signal?: AbortSignal) {
+    const streamWithElevenLabs = async (text: string, language: string, signal?: AbortSignal) => {
         const voiceId = ELEVENLABS_VOICE_MAP['default'];
 
         console.log(`[TTS-ElevenLabs] Synthesizing: "${text.substring(0, 50)}..."`);
 
-        const audioStream = await this.elevenLabs.textToSpeech.convertAsStream(
+        const audioStream = await elevenLabs.textToSpeech.convertAsStream(
             voiceId,
             {
                 text,
@@ -169,23 +102,23 @@ export class TTSService extends EventEmitter {
                 console.log('[TTS-ElevenLabs] Stream aborted during iteration');
                 break;
             }
-            this.emit("audio", Buffer.from(chunk));
+            emitter.emit("audio", Buffer.from(chunk));
         }
 
-        this.emit("end");
+        emitter.emit("end");
         console.log(`[TTS-ElevenLabs] Synthesis complete`);
-    }
+    };
 
     /**
      * Deepgram streaming synthesis
      */
-    private async streamWithDeepgram(text: string, language: string, signal?: AbortSignal) {
-        const voiceModel = this.getVoiceForLanguage(language);
+    const streamWithDeepgram = async (text: string, language: string, signal?: AbortSignal) => {
+        const voiceModel = getVoiceForLanguage(language);
 
         console.log(`[TTS-Deepgram] Synthesizing with voice: ${voiceModel}`);
 
         try {
-            const response = await this.deepgram.speak.request(
+            const response = await deepgram.speak.request(
                 { text },
                 {
                     model: voiceModel,
@@ -212,29 +145,102 @@ export class TTSService extends EventEmitter {
                 if (done) break;
 
                 const chunk = Buffer.from(value);
-                this.emit("audio", chunk);
+                emitter.emit("audio", chunk);
             }
 
-            this.emit("end");
+            emitter.emit("end");
 
         } catch (error: any) {
             console.error("[TTS-Deepgram] Error:", error);
-            this.emit("error", error);
+            emitter.emit("error", error);
         }
-    }
+    };
+
+    /**
+     * Synthesize — uses Deepgram directly (or ElevenLabs if available and working)
+     * Emits "audio" chunks and "end" event
+     */
+    const streamTTS = async (text: string, language: string = 'en') => {
+        process.stdout.write(`[TTS] Requesting synthesis: "${text.substring(0, 30)}..."\r`);
+
+        // Sequence requests to prevent audio chunk interleaving
+        ttsMutex = ttsMutex.then(async () => {
+            // Create a new AbortController for this stream
+            currentAbortController = new AbortController();
+            const signal = currentAbortController.signal;
+
+            try {
+                // Try ElevenLabs primarily
+                if (!elevenLabsDisabled && (provider === 'elevenlabs' || provider === 'auto') && elevenLabs) {
+                    try {
+                        await streamWithElevenLabs(text, language, signal);
+                        return;
+                    } catch (error: any) {
+                        if (error.name === 'AbortError') throw error;
+                        console.error('[TTS] ElevenLabs failed, falling back to Deepgram:', error.message);
+                        if (error.status === 401 || error.status === 429) {
+                            elevenLabsDisabled = true;
+                        }
+                    }
+                }
+
+                if (signal.aborted) return;
+
+                // Deepgram (fallback) with stream timeout protection
+                const deepgramPromise = streamWithDeepgram(text, language, signal);
+                const timeoutPromise = new Promise((_, reject) =>
+                    setTimeout(() => reject(new Error('Deepgram TTS Stream Timeout')), 10000)
+                );
+
+                await Promise.race([deepgramPromise, timeoutPromise]);
+
+            } catch (error: any) {
+                if (error.name === 'AbortError') {
+                    console.log('[TTS] Stream aborted intentionally');
+                } else if (error.message === 'Deepgram TTS Stream Timeout') {
+                    console.error('[TTS] Deepgram synthesis timed out, breaking mutex');
+                } else {
+                    console.error('[TTS] Stream error:', error);
+                }
+            } finally {
+                currentAbortController = null;
+            }
+        });
+
+        return ttsMutex;
+    };
+
+    /**
+     * Stop any ongoing synthesis immediately
+     */
+    const stop = () => {
+        if (currentAbortController) {
+            console.log('[TTS] Aborting current synthesis');
+            currentAbortController.abort();
+            currentAbortController = null;
+        }
+    };
 
     /**
      * Get current TTS provider
      */
-    getProvider(): string {
-        return this.provider;
-    }
+    const getProvider = (): string => {
+        return provider;
+    };
 
     /**
      * Force switch provider
      */
-    setProvider(provider: 'auto' | 'elevenlabs' | 'deepgram') {
-        this.provider = provider;
-        console.log(`[TTS] Switched to provider: ${provider}`);
-    }
+    const setProvider = (p: 'auto' | 'elevenlabs' | 'deepgram') => {
+        provider = p;
+        console.log(`[TTS] Switched to provider: ${p}`);
+    };
+
+    return Object.assign(emitter, {
+        getVoiceForLanguage,
+        streamTTS,
+        stop,
+        getProvider,
+        setProvider
+    }) as TTSService;
 }
