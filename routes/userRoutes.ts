@@ -1,5 +1,9 @@
 import express from 'express';
-import { searchUsers, addContact, getContacts, removeContact, getUsers } from '../controllers/userController';
+import { searchUsers } from '../controllers/user/searchuserscontroller';
+import { getUsers } from '../controllers/user/getuserscontroller';
+import { addContact } from '../controllers/user/addcontactcontroller';
+import { getContacts } from '../controllers/user/getcontactscontroller';
+import { removeContact } from '../controllers/user/removecontactcontroller';
 import { auth } from '../middleware/auth';
 
 const router = express.Router();

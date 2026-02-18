@@ -1,5 +1,6 @@
 import express from 'express';
-import { saveCall, getCallHistory } from '../controllers/callController';
+import { saveCall } from '../controllers/call/savecallcontroller';
+import { getCallHistory } from '../controllers/call/getcallhistorycontroller';
 import { auth } from '../middleware/auth';
 
 const router = express.Router();
