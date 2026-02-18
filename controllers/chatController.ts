@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { anthropic, SYSTEM_PROMPT, CLAUDE_MODEL_NAME } from '../services/claudeService';
+import { anthropic, SYSTEM_PROMPT, CLAUDE_MODEL_NAME } from '../services/ai/claudeservice';
 import { mapHistoryToClaude } from '../utils/mapper';
 
 export const chatHandler = async (req: Request, res: Response): Promise<void> => {

@@ -40,9 +40,6 @@ export function createSTTService(apiKey: string, language: string = 'ur'): STTSe
     let connection: any;
     let lastTranscript: string = "";
 
-    /**
-     * Update the language for STT (e.g., when caller language is detected or changed)
-     */
     const setLanguage = (language: string) => {
         currentLanguage = DEEPGRAM_LANGUAGE_MAP[language] || language;
         console.log(`[STT] Language updated to: ${currentLanguage}`);
@@ -51,7 +48,6 @@ export function createSTTService(apiKey: string, language: string = 'ur'): STTSe
     const start = async () => {
         console.log(`[STT] Starting Deepgram connection with language: ${currentLanguage}...`);
 
-        // Use Nova-3 for Urdu as Nova-2 doesn't support it for streaming
         const isUrdu = currentLanguage.startsWith('ur');
         const model = isUrdu ? "nova-3" : "nova-2";
 
@@ -60,12 +56,11 @@ export function createSTTService(apiKey: string, language: string = 'ur'): STTSe
             language: currentLanguage,
             encoding: "mulaw",
             sample_rate: 8000,
-            endpointing: 150,        // Further reduced for lower latency
-            utterance_timeout: 10000, // Force close utterances after 10s of noise
+            endpointing: 150,
+            utterance_timeout: 10000,
             interim_results: true,
         };
 
-        // Only enable advanced features for English to be safe
         if (currentLanguage.startsWith('en')) {
             options.smart_format = true;
             options.vad_events = true;
@@ -78,13 +73,11 @@ export function createSTTService(apiKey: string, language: string = 'ur'): STTSe
             emitter.emit("open");
         });
 
-        // Trigger 'speech_started' the moment voice is detected for barge-in
         connection.on(LiveTranscriptionEvents.SpeechStarted, (data: any) => {
             console.log("[STT] SpeechStarted (User started speaking)");
             emitter.emit("speech_started");
         });
 
-        // Trigger 'speech_ended' with the latest transcript we have
         connection.on(LiveTranscriptionEvents.UtteranceEnd, (data: any) => {
             console.log("[STT] UtteranceEnd (VAD detected silence)");
             emitter.emit("speech_ended", lastTranscript);
@@ -98,7 +91,6 @@ export function createSTTService(apiKey: string, language: string = 'ur'): STTSe
             if (transcript) {
                 lastTranscript = transcript;
 
-                // Emit metadata for distance-based filtering
                 emitter.emit("transcript_metadata", {
                     confidence: confidence || 0,
                     is_final: data.is_final,
@@ -108,7 +100,7 @@ export function createSTTService(apiKey: string, language: string = 'ur'): STTSe
                 if (data.is_final) {
                     console.log(`[STT] Final transcript: "${transcript}" (Confidence: ${confidence?.toFixed(2)})`);
                     emitter.emit("transcript", transcript);
-                    lastTranscript = ""; // Reset after final
+                    lastTranscript = "";
                 } else {
                     emitter.emit("interim", transcript);
                 }
@@ -147,4 +139,3 @@ export function createSTTService(apiKey: string, language: string = 'ur'): STTSe
         stop
     }) as STTService;
 }
-

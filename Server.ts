@@ -2,7 +2,7 @@ import http from 'http';
 import app from './app';
 import { PORT } from './config/env';
 import { connectDB } from './config/db';
-import { setupSocket } from './services/socketService';
+import { setupSocket } from './services/socket/socketservice';
 
 // ---------------------------
 // Start Server with Socket.IO

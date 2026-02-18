@@ -1,6 +1,6 @@
 import { Server } from 'socket.io';
 import http from 'http';
-import { AIPeerService, createAIPeerService } from './aiPeerService';
+import { AIPeerService, createAIPeerService } from '../webrtc/aipeerservice';
 
 export const setupSocket = (server: http.Server) => {
     const io = new Server(server, {

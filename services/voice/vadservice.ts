@@ -17,9 +17,6 @@ export function createVADService(): VADService {
     let isSpeechDetected = false;
     let pcmBuffer: Float32Array = new Float32Array(0);
 
-    /**
-     * Convert u-law (PCMU) to Float32 PCM
-     */
     const decodeUlau = (buffer: Buffer): Float32Array => {
         const l = buffer.length;
         const pcm = new Float32Array(l);
@@ -43,30 +40,25 @@ export function createVADService(): VADService {
     };
 
     const init = async () => {
-        const modelPath = path.join(__dirname, "..", "models", "silero_vad.onnx");
+        // Updated path to models directory
+        const modelPath = path.join(__dirname, "..", "..", "models", "silero_vad.onnx");
         console.log(`[VAD] Loading model from: ${modelPath}`);
         session = await ort.InferenceSession.create(modelPath);
         reset();
     };
 
-    /**
-     * Process an audio chunk (u-law, 8kHz)
-     * Returns true if robust speech is detected
-     */
     const processAudio = async (chunk: Buffer): Promise<boolean> => {
         if (!session || !state) return false;
 
         const newPcm = decodeUlau(chunk);
 
-        // Append to buffer
         const combined = new Float32Array(pcmBuffer.length + newPcm.length);
         combined.set(pcmBuffer);
         combined.set(newPcm, pcmBuffer.length);
         pcmBuffer = combined;
 
-        const frameSize = 256; // 32ms at 8kHz
+        const frameSize = 256;
 
-        // Process all complete frames in the buffer
         while (pcmBuffer.length >= frameSize) {
             const frame = pcmBuffer.slice(0, frameSize);
             pcmBuffer = pcmBuffer.slice(frameSize);
@@ -111,5 +103,3 @@ export function createVADService(): VADService {
         processAudio
     };
 }
-
-
