@@ -11,12 +11,10 @@ export interface WhisperSTTService extends STTService {
 
 export function createWhisperSTTService(pythonPath: string = PYTHON_PATH): STTService {
     const emitter = new EventEmitter();
-    let currentLanguage = "en";
+    let currentLanguage = "auto";
     let isRunning = false;
     let audioBuffer: Buffer = Buffer.alloc(0);
-    const CHUNK_SIZE = 16000 * 2; // ~2 seconds of 8kHz 16-bit audio (if we were 16kHz, but we are 8kHz mulaw)
-    // Wait, the existing audio is mulaw 8kHz. Whisper needs 16kHz PCM.
-    // We'll need to convert mulaw to PCM and maybe resample.
+    const CHUNK_SIZE = 16000 * 2;
 
     const WHISPER_DIR = path.join(__dirname, "whisper");
     const TRANSCRIBE_SCRIPT = path.join(WHISPER_DIR, "transcribe.py");
@@ -48,8 +46,6 @@ export function createWhisperSTTService(pythonPath: string = PYTHON_PATH): STTSe
         // The user guide suggested saving as .wav.
 
         try {
-            // Write raw buffer to file (we'll assume the python script can handle raw or we add a header)
-            // Actually, let's use a simple WAV header for the python script.
             fs.writeFileSync(TEMP_AUDIO_FILE, bufferToProcess);
 
             const py = spawn(pythonPath, [TRANSCRIBE_SCRIPT, TEMP_AUDIO_FILE, currentLanguage]);
@@ -59,9 +55,7 @@ export function createWhisperSTTService(pythonPath: string = PYTHON_PATH): STTSe
                 dataString += data.toString();
             });
 
-            py.stderr.on("data", (data) => {
-                // console.error("[WhisperSTT] Python stderr:", data.toString());
-            });
+            py.stderr.on('data', (_data) => { });
 
             py.on("close", (code) => {
                 try {
@@ -75,9 +69,7 @@ export function createWhisperSTTService(pythonPath: string = PYTHON_PATH): STTSe
                             language: result.language
                         });
                     }
-                } catch (e) {
-                    // console.error("[WhisperSTT] Error parsing python output:", dataString);
-                }
+                } catch (e) { }
             });
         } catch (err) {
             console.error("[WhisperSTT] processing error:", err);
