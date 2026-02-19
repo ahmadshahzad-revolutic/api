@@ -17,7 +17,7 @@ export function createVADService(): VADService {
     let isSpeechDetected = false;
     let pcmBuffer: Float32Array = new Float32Array(0);
 
-    const decodeUlau = (buffer: Buffer): Float32Array => {
+    const decodeUlau = (buffer: Buffer | Uint8Array): Float32Array => {
         const l = buffer.length;
         const pcm = new Float32Array(l);
         for (let i = 0; i < l; i++) {

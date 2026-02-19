@@ -9,4 +9,6 @@ export const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY as string;
 export const AZURE_SPEECH_KEY = process.env.AZURE_SPEECH_KEY as string;
 export const AZURE_SPEECH_REGION = process.env.AZURE_SPEECH_REGION as string;
 export const MONGO_URI = process.env.MONGO_URI;
+export const STT_PROVIDER = process.env.STT_PROVIDER || 'deepgram';
+export const PYTHON_PATH = process.env.PYTHON_PATH || 'python';
 export const CLAUDE_MODEL_NAME = "claude-haiku-4-5-20251001";

@@ -2,7 +2,7 @@ import { RTCPeerConnection, RTCRtpCodecParameters, MediaStreamTrack } from "weri
 import { createSTTService } from "../voice/sttservice";
 import { createTTSService } from "../voice/ttsservice";
 import { createVADService } from "../voice/vadservice";
-import { DEEPGRAM_API_KEY, ELEVENLABS_API_KEY } from "../../config/env";
+import { ELEVENLABS_API_KEY } from "../../config/env";
 import { AIPeerService, AIPeerContext, CallState } from "./types";
 import { setupHandlers, setupDataChannel } from "./eventhandlers";
 import { handleTranslation } from "./translationmanager";
@@ -41,8 +41,8 @@ export function createAIPeerService(callId: string = 'default'): AIPeerService {
             },
             iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
         }),
-        stt: createSTTService(DEEPGRAM_API_KEY, 'en'),
-        tts: createTTSService(DEEPGRAM_API_KEY, ELEVENLABS_API_KEY),
+        stt: createSTTService('auto'),
+        tts: createTTSService(ELEVENLABS_API_KEY),
         vad: createVADService(),
         chatHistory: [],
         outputTrack: new MediaStreamTrack({ kind: "audio" }),
@@ -51,7 +51,7 @@ export function createAIPeerService(callId: string = 'default'): AIPeerService {
         ssrc: Math.floor(Math.random() * 1000000),
         audioQueue: Buffer.alloc(0),
         pacerInterval: null,
-        callLanguages: { caller: 'en', receiver: 'en' },
+        callLanguages: { caller: 'auto', receiver: 'auto' },
         isTranslationActive: false,
         sentenceBuffer: "",
         lastProcessedTranscript: "",
@@ -75,11 +75,11 @@ export function createAIPeerService(callId: string = 'default'): AIPeerService {
         peakVolumeThisUtterance: -100
     };
 
-    ctx.tts.setProvider('deepgram');
+    ctx.tts.setProvider('elevenlabs');
     ctx.vad.init().catch(err => console.error("[AI_PEER] VAD initialization failed:", err));
     ctx.controlChannel = ctx.pc.createDataChannel("control");
 
-    const initializeCall = (clrLang: string = 'en', rcvLang: string = 'en', clrName: string = 'User') => {
+    const initializeCall = (clrLang: string = 'auto', rcvLang: string = 'auto', clrName: string = 'User') => {
         ctx.callerName = clrName;
         ctx.callLanguages = { caller: clrLang, receiver: rcvLang };
         ctx.stt.setLanguage(clrLang);

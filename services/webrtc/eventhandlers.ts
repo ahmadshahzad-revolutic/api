@@ -64,15 +64,13 @@ export function setupHandlers(ctx: AIPeerContext, sendGreeting: () => void, fina
 
                 const db = calculateDb(rtp.payload);
                 ctx.lastAudioLevelDb = db;
+                ctx.peakVolumeThisUtterance = Math.max(ctx.peakVolumeThisUtterance, db);
 
                 const isSpeech = await ctx.vad.processAudio(rtp.payload);
                 if (isSpeech) {
                     if (!ctx.userSpeechStartTime) {
                         ctx.userSpeechStartTime = Date.now();
-                        ctx.peakVolumeThisUtterance = db;
                     }
-
-                    ctx.peakVolumeThisUtterance = Math.max(ctx.peakVolumeThisUtterance, db);
                     ctx.lastAudioLevelDb = db;
                     const duration = Date.now() - ctx.userSpeechStartTime;
 
@@ -109,6 +107,7 @@ export function setupHandlers(ctx: AIPeerContext, sendGreeting: () => void, fina
 
         console.log(`[AI_PEER] STT Final Transcript: "${cleanText}" (Peak Vol: ${ctx.peakVolumeThisUtterance.toFixed(1)}dB)`);
         ctx.transcriptBuffer = cleanText;
+        ctx.peakVolumeThisUtterance = -100; // Reset for next
         startSilenceTimer(ctx, true, finalizeTurn);
     });
 
@@ -126,6 +125,12 @@ export function setupHandlers(ctx: AIPeerContext, sendGreeting: () => void, fina
     ctx.stt.on("transcript_metadata", (data: any) => {
         if (data?.confidence) {
             ctx.currentMaxConfidence = Math.max(ctx.currentMaxConfidence, data.confidence);
+
+            // Update caller language if detected specifically (and we are in auto mode or it changed)
+            if (data.language && data.language !== ctx.callLanguages.caller) {
+                console.log(`[AI_PEER] Language detected: ${data.language}`);
+                ctx.callLanguages.caller = data.language;
+            }
 
             if ((ctx.isAISpeaking || ctx.isTranslationActive || ctx.audioQueue.length > 0) &&
                 ctx.currentMaxConfidence > CONFIDENCE_THRESHOLD &&

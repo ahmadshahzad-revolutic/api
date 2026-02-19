@@ -36,12 +36,12 @@ export const setupSocket = (server: http.Server) => {
                     const aiPeer = createAIPeerService(from);
                     aiPeers.set(from, aiPeer);
 
-                    // Initialize with language configuration
-                    const callerLang = callerLanguage || 'en';
-                    const receiverLang = receiverLanguage || 'en';
+                    // Force automatic language detection
+                    const callerLang = 'auto';
+                    const receiverLang = 'auto';
                     const finalCallerName = callerName || 'User';
                     aiPeer.initializeCall(callerLang, receiverLang, finalCallerName);
-                    console.log(`[SIGNAL] AI Call languages: ${callerLang} ↔ ${receiverLang}, Caller: ${finalCallerName}`);
+                    console.log(`[SIGNAL] AI Call initiated with automatic detection (auto ↔ auto), Caller: ${finalCallerName}`);
 
                     // Handle ICE candidates from AI peer - setup BEFORE answering
                     aiPeer.pc.onicecandidate = (event) => {
@@ -79,16 +79,6 @@ export const setupSocket = (server: http.Server) => {
             io.to(to).emit('incoming-call', { from, offer, name });
         });
 
-        // Handle language updates mid-call
-        socket.on('update-languages', ({ callerLanguage, receiverLanguage }) => {
-            if (currentUserId) {
-                const aiPeer = aiPeers.get(currentUserId);
-                if (aiPeer) {
-                    aiPeer.updateCallLanguages(callerLanguage, receiverLanguage);
-                    console.log(`[SIGNAL] Languages updated for ${currentUserId}: ${callerLanguage} ↔ ${receiverLanguage}`);
-                }
-            }
-        });
 
         socket.on('answer-call', ({ to, answer }) => {
             const call = activeCalls.get(currentUserId || '');
