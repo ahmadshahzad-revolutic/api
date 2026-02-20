@@ -43,20 +43,11 @@ export const setupSocket = (server: http.Server) => {
                     // Handle ICE candidates from AI peer - setup BEFORE answering
                     aiPeer.pc.onicecandidate = (event) => {
                         if (event.candidate) {
-                            console.log(`[ICE] AI Peer generated candidate: ${event.candidate.candidate?.split(' ')[7] || 'relay'}`);
                             socket.emit('ice-candidate', {
                                 candidate: event.candidate,
                                 from: '10'
                             });
                         }
-                    };
-
-                    aiPeer.pc.onconnectionstatechange = () => {
-                        console.log(`[AI_PEER] PC Connection State: ${aiPeer.pc.connectionState}`);
-                    };
-
-                    aiPeer.pc.oniceconnectionstatechange = () => {
-                        console.log(`[AI_PEER] ICE Connection State: ${aiPeer.pc.iceConnectionState}`);
                     };
 
                     const answer = await aiPeer.createAnswer(offer);

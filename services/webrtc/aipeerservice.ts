@@ -39,20 +39,7 @@ export function createAIPeerService(callId: string = 'default'): AIPeerService {
                     }),
                 ],
             },
-            iceServers: [
-                { urls: "stun:stun.l.google.com:19302" },
-                { urls: "stun:stun1.l.google.com:19302" },
-                {
-                    urls: "turn:free.expressturn.com:3478",
-                    username: "000000002086940175",
-                    credential: "lh02j2weeZCurrCXyuKeRI6PH2U="
-                },
-                {
-                    urls: "turn:free.expressturn.com:3478?transport=tcp",
-                    username: "000000002086940175",
-                    credential: "lh02j2weeZCurrCXyuKeRI6PH2U="
-                },
-            ]
+            iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
         }),
         stt: createSTTService('auto'),
         tts: createTTSService(ELEVENLABS_API_KEY),
