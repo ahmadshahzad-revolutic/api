@@ -40,8 +40,9 @@ export function createVADService(): VADService {
     };
 
     const init = async () => {
-        // Updated path to models directory
-        const modelPath = path.join(__dirname, "..", "..", "models", "silero_vad.onnx");
+        // process.cwd() = project root both locally and in production (Railway /app)
+        // __dirname after tsc build = dist/services/voice/ which breaks the relative path
+        const modelPath = path.join(process.cwd(), "models", "silero_vad.onnx");
         console.log(`[VAD] Loading model from: ${modelPath}`);
         session = await ort.InferenceSession.create(modelPath);
         reset();
