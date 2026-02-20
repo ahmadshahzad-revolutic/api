@@ -51,7 +51,6 @@ export function createAIPeerService(callId: string = 'default'): AIPeerService {
         ssrc: Math.floor(Math.random() * 1000000),
         audioQueue: Buffer.alloc(0),
         pacerInterval: null,
-        callLanguages: { caller: 'auto', receiver: 'auto' },
         isTranslationActive: false,
         sentenceBuffer: "",
         lastProcessedTranscript: "",
@@ -72,32 +71,25 @@ export function createAIPeerService(callId: string = 'default'): AIPeerService {
         userSpeechStartTime: null,
         currentMaxConfidence: 0,
         lastAudioLevelDb: -100,
-        peakVolumeThisUtterance: -100
+        peakVolumeThisUtterance: -100,
+        detectedLanguage: 'english'  // default; updated from STT transcript_metadata
     };
 
     ctx.tts.setProvider('elevenlabs');
     ctx.vad.init().catch(err => console.error("[AI_PEER] VAD initialization failed:", err));
     ctx.controlChannel = ctx.pc.createDataChannel("control");
 
-    const initializeCall = (clrLang: string = 'auto', rcvLang: string = 'auto', clrName: string = 'User') => {
+    const initializeCall = (clrName: string = 'User') => {
         ctx.callerName = clrName;
-        ctx.callLanguages = { caller: clrLang, receiver: rcvLang };
-        ctx.stt.setLanguage(clrLang);
         ctx.stt.start().catch(err => console.error("[AI_PEER] STT pre-start failed:", err));
-        console.log(`[AI_PEER] Call ${callId} initialized: ${clrLang} ↔ ${rcvLang}`);
-    };
-
-    const updateCallLanguages = (clrLang: string, rcvLang: string) => {
-        ctx.callLanguages = { caller: clrLang, receiver: rcvLang };
-        ctx.stt.setLanguage(clrLang);
-        console.log(`[AI_PEER] Languages updated: ${clrLang} ↔ ${rcvLang}`);
+        console.log(`[AI_PEER] Call ${callId} initialized for: ${clrName}`);
     };
 
     const sendGreeting = async () => {
         if (ctx.hasSentGreeting) return;
         ctx.hasSentGreeting = true;
         const greeting = `Hello ${ctx.callerName}! I am your Revolutic Assistant. How can I help you today?`;
-        ctx.tts.streamTTS(greeting, ctx.callLanguages.receiver);
+        ctx.tts.streamTTS(greeting, 'en');
         ctx.chatHistory.push({ role: "assistant", content: greeting });
     };
 
@@ -108,7 +100,6 @@ export function createAIPeerService(callId: string = 'default'): AIPeerService {
         pc: ctx.pc,
         get isAISpeaking() { return ctx.isAISpeaking; },
         initializeCall,
-        updateCallLanguages,
         async createAnswer(offer: any) {
             await ctx.pc.setRemoteDescription(offer);
             const answer = await ctx.pc.createAnswer();

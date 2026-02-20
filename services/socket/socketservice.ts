@@ -36,12 +36,9 @@ export const setupSocket = (server: http.Server) => {
                     const aiPeer = createAIPeerService(from);
                     aiPeers.set(from, aiPeer);
 
-                    // Force automatic language detection
-                    const callerLang = 'auto';
-                    const receiverLang = 'auto';
                     const finalCallerName = callerName || 'User';
-                    aiPeer.initializeCall(callerLang, receiverLang, finalCallerName);
-                    console.log(`[SIGNAL] AI Call initiated with automatic detection (auto ↔ auto), Caller: ${finalCallerName}`);
+                    aiPeer.initializeCall(finalCallerName);
+                    console.log(`[SIGNAL] AI Call initiated for caller: ${finalCallerName}`);
 
                     // Handle ICE candidates from AI peer - setup BEFORE answering
                     aiPeer.pc.onicecandidate = (event) => {

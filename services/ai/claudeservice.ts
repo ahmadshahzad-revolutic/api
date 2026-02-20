@@ -5,38 +5,42 @@ export const anthropic = new Anthropic({
     apiKey: CLAUDE_API_KEY,
 });
 
-// System prompt for the AI calling agent.
-export const TRANSLATOR_SYSTEM_PROMPT = `You are a helpful human on a phone call. 
-Your goal is to be a natural conversational partner. 
-- Maintain continuity: Use the provided context to ensure your responses flow logically from previous turns.
-- Handle Interruptions: If you were interrupted, you will be provided with what you were saying and the user's new input. Your priority is to address the user's new input while seamlessly connecting it to what you were previously saying or the topic under discussion.
-- Acknowledge and Pivot: Briefly acknowledge the user's interruption (e.g., "Ah, I see," or "Sure, let's talk about that instead") if it feels natural, then answer their new point.
-- Response Length: Keep your responses concise, strictly between 2 to 3 lines (sentences). 
-- Versatility: You are capable of handling any scenario with professional, human-like intelligence.
-- Directness: Start with the most relevant information.
-- Natural speech: Use natural transitions, avoid overly formal robotic phrasing.
-- Multilingual: You are a fluent polyglot. If the user speaks a language other than the target, translate it perfectly and respond in the target language. NEVER say you don't understand a language.`;
+export const TRANSLATOR_SYSTEM_PROMPT = [
+    'You are a helpful assistant on a phone call.',
 
-// Keep the JSON-based prompt for the /chat REST API (non-WebRTC)
-export const SYSTEM_PROMPT = `${TRANSLATOR_SYSTEM_PROMPT}
+    // === LANGUAGE RULES — HIGHEST PRIORITY — READ FIRST ===
+    '=== STRICT LANGUAGE RULE (NON-NEGOTIABLE) ===',
+    'You will be told in every message which language the user spoke (URDU or ENGLISH).',
+    'You MUST respond ONLY in that exact language. Zero exceptions.',
+    '  • If instruction says URDU  → your ENTIRE response must be in Urdu script (اردو). Not a single English word.',
+    '  • If instruction says ENGLISH → your ENTIRE response must be in English. Not a single Urdu word.',
+    'Mixing languages = FAILURE. Responding in the wrong language = FAILURE.',
 
-## STRICT JSON FORMAT
-You MUST always respond in this JSON format:
-{
-  "transcription": "What you understood the user said (in original language).",
-  "reply": "Your conversational response."
-}
+    // === URDU DIACRITICS RULE ===
+    '=== URDU DIACRITICS RULE (MANDATORY WHEN RESPONDING IN URDU) ===',
+    'You MUST apply full diacritics (اعراب) on every Urdu word you write:',
+    '  زَبَر (Fatah) = َ  |  زِیر (Kasra) = ِ  |  پَیش (Damma) = ُ  |  تَشدِید = ّ  |  جَزم (Sukun) = ْ',
+    'CORRECT: "مَیں آپ کِی مَدَد کَر سَکتَا ہُوں" (every word has diacritics)',
+    'WRONG:   "میں آپ کی مدد کر سکتا ہوں" (no diacritics — FORBIDDEN)',
+    'Every single Urdu word in your response MUST carry proper diacritics. No bare Urdu words ever.',
 
-Example:
-{
-  "transcription": "Hello, how are you?",
-  "reply": "I'm doing well, thank you! How can I help you today?"
-}`;
+    // === CONVERSATION RULES ===
+    '=== CONVERSATION RULES ===',
+    '- You are a helpful human-like assistant. Be warm, professional, and concise.',
+    '- Response Length: 2 to 3 sentences maximum.',
+    '- Directness: Lead with the most relevant information.',
+    '- Natural speech: Use natural transitions, avoid robotic phrasing.',
+    '- Maintain continuity: Use conversation history to ensure logical flow.',
+    '- Handle Interruptions: When interrupted, address the new input first, then naturally close the previous topic.',
+    '- Noise Handling: If the input is noise or a hallucination phrase, respond with a neutral "Could you repeat that?" in the user\'s language.',
+    '- Unsupported Language: If the user speaks a language other than English or Urdu, politely say in English: "I only support English and Urdu."',
+].join('\n');
+
 
 export function createTranslationRequest(
     text: string,
     sourceLang: string = 'auto',
-    targetLang: string = 'ur',
+    targetLang: string = 'auto',
     context: Array<{ speaker: string; text: string }> = [],
     interruptedResponse?: string,
     interruptedQuestion?: string
@@ -55,17 +59,25 @@ export function createTranslationRequest(
         prompt += `[CONTEXT: You were interrupted while answering the user's previous question: "${interruptedQuestion}"]\n`;
         prompt += `[WHAT YOU HAD SAID BEFORE INTERRUPTION: "${interruptedResponse}..."]\n`;
         prompt += `[USER'S NEW INPUT: "${text}"]\n`;
-        prompt += `[INSTRUCTION: Please provide a response that addresses the user's new input, while naturally closing or pivoting from the previous topic if it's still relevant. Combine the context of both speeches into your answer.]\n\n`;
+        const iLang1 = targetLang === 'urdu' ? 'Urdu' : 'English';
+        const langWarn1 = targetLang === 'urdu' ? ' Your ENTIRE reply must be in Urdu script only. DO NOT use any English words.' : '';
+        prompt += `[INSTRUCTION: ⚠️ LANGUAGE = ${iLang1.toUpperCase()}. Respond ONLY in ${iLang1}.${langWarn1} Address the user's new input while naturally closing or pivoting from the previous topic.]\n\n`;
     } else if (interruptedResponse) {
         prompt += `[CONTEXT: You were interrupted while saying: "${interruptedResponse}..."]\n`;
         prompt += `[USER'S NEW INPUT: "${text}"]\n`;
-        prompt += `[INSTRUCTION: Address the user's new input. Acknowledge the interruption naturally if appropriate.]\n\n`;
+        const iLang2 = targetLang === 'urdu' ? 'Urdu' : 'English';
+        const langWarn2 = targetLang === 'urdu' ? ' Your ENTIRE reply must be in Urdu script only. DO NOT use any English words.' : '';
+        prompt += `[INSTRUCTION: ⚠️ LANGUAGE = ${iLang2.toUpperCase()}. Respond ONLY in ${iLang2}.${langWarn2} Acknowledge the interruption naturally if appropriate.]\n\n`;
     } else {
-        prompt += `[Caller Input: "${text}"]\n[INSTRUCTION: Respond NATURALLY in the SAME language as the caller. If they speak Urdu, respond in Pakistani Urdu. If they speak English, respond in English. Maintain conversation context and NEVER say you don't understand a language. Do NOT include translations or English text in parentheses if you are responding in another language.]`;
+        const responseLang = targetLang === 'urdu' ? 'Urdu' : 'English';
+        const langWarn3 = targetLang === 'urdu' ? ' Your ENTIRE reply must be in Urdu script only — not a single English word.' : '';
+        prompt += `[Caller Input: "${text}"]\n`;
+        prompt += `[INSTRUCTION: ⚠️ LANGUAGE = ${responseLang.toUpperCase()}. Respond ONLY in ${responseLang}.${langWarn3} Do NOT mix languages. Maintain conversation context.]`;
     }
 
     return prompt;
 }
+
 
 export const createTranslationStream = (
     text: string,
@@ -89,45 +101,3 @@ export const createTranslationStream = (
         ],
     }, { signal });
 };
-
-export const translateText = async (
-    text: string,
-    targetLang: string,
-    sourceLang: string = 'auto',
-    history: any[] = [],
-    signal?: AbortSignal
-): Promise<{ translation: string; latency: number }> => {
-    const startTime = Date.now();
-    const message = createTranslationRequest(text, sourceLang, targetLang);
-
-    const response = await anthropic.messages.create({
-        model: CLAUDE_MODEL_NAME,
-        max_tokens: 200,
-        temperature: 0.4,
-        system: TRANSLATOR_SYSTEM_PROMPT,
-        messages: [
-            ...history,
-            { role: 'user', content: message }
-        ],
-    }, { signal });
-
-    const translation = (response.content[0] as any).text;
-    const latency = Date.now() - startTime;
-
-    return { translation, latency };
-};
-
-export const createStream = (message: string, history: any[]) => {
-    return anthropic.messages.stream({
-        model: CLAUDE_MODEL_NAME,
-        max_tokens: 80,
-        temperature: 0.4,
-        system: SYSTEM_PROMPT,
-        messages: [
-            ...history,
-            { role: 'user', content: message }
-        ],
-    });
-};
-
-export { CLAUDE_MODEL_NAME };

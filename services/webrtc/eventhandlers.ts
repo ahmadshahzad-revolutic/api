@@ -126,12 +126,6 @@ export function setupHandlers(ctx: AIPeerContext, sendGreeting: () => void, fina
         if (data?.confidence) {
             ctx.currentMaxConfidence = Math.max(ctx.currentMaxConfidence, data.confidence);
 
-            // Update caller language if detected specifically (and we are in auto mode or it changed)
-            if (data.language && data.language !== ctx.callLanguages.caller) {
-                console.log(`[AI_PEER] Language detected: ${data.language}`);
-                ctx.callLanguages.caller = data.language;
-            }
-
             if ((ctx.isAISpeaking || ctx.isTranslationActive || ctx.audioQueue.length > 0) &&
                 ctx.currentMaxConfidence > CONFIDENCE_THRESHOLD &&
                 ctx.lastAudioLevelDb > ZONE_B_DB) {
@@ -143,6 +137,11 @@ export function setupHandlers(ctx: AIPeerContext, sendGreeting: () => void, fina
             if (!data.is_final && data.text) {
                 startSilenceTimer(ctx, false, finalizeTurn);
             }
+        }
+
+        // Track user's detected language so we can mirror it in responses
+        if (data?.language) {
+            ctx.detectedLanguage = data.language.toLowerCase();
         }
     });
 

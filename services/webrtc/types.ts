@@ -3,10 +3,7 @@ import { STTService } from "../voice/sttservice";
 import { TTSService } from "../voice/ttsservice";
 import { VADService } from "../voice/vadservice";
 
-export interface CallLanguageConfig {
-    caller: string;
-    receiver: string;
-}
+
 
 export enum CallState {
     LISTENING = 'LISTENING',
@@ -28,7 +25,7 @@ export interface AIPeerContext {
     ssrc: number;
     audioQueue: Buffer;
     pacerInterval: any;
-    callLanguages: CallLanguageConfig;
+
     isTranslationActive: boolean;
     sentenceBuffer: string;
     lastProcessedTranscript: string;
@@ -50,13 +47,13 @@ export interface AIPeerContext {
     currentMaxConfidence: number;
     lastAudioLevelDb: number;
     peakVolumeThisUtterance: number;
+    detectedLanguage: string; // 'english' | 'urdu' | 'hindi' — last detected user language
 }
 
 export interface AIPeerService {
     pc: RTCPeerConnection;
     isAISpeaking: boolean;
-    initializeCall(callerLanguage?: string, receiverLanguage?: string, callerName?: string): void;
-    updateCallLanguages(callerLanguage: string, receiverLanguage: string): void;
+    initializeCall(callerName?: string): void;
     createAnswer(offer: any): Promise<any>;
     stop(): Promise<void>;
 }

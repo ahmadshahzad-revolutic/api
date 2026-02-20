@@ -27,6 +27,7 @@
     "elevenlabs": "^1.59.0",
     "express": "^5.2.1",
     "express-session": "^1.19.0",
+    "groq-sdk": "^0.37.0",
     "jsonwebtoken": "^9.0.3",
     "microsoft-cognitiveservices-speech-sdk": "^1.48.0",
     "mongoose": "^9.2.1",

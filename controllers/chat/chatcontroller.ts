@@ -1,6 +1,9 @@
 import { Request, Response } from 'express';
-import { anthropic, SYSTEM_PROMPT, CLAUDE_MODEL_NAME } from '../../services/ai/claudeservice';
+import { anthropic } from '../../services/ai/claudeservice';
+import { CLAUDE_MODEL_NAME } from '../../config/env';
 import { mapHistoryToClaude } from '../../utils/mapper';
+
+const CHAT_SYSTEM_PROMPT = 'You are a helpful assistant. Respond in JSON: {"transcription": "what user said", "reply": "your response"}';
 
 export const chatHandler = async (req: Request, res: Response): Promise<void> => {
     try {
@@ -12,7 +15,7 @@ export const chatHandler = async (req: Request, res: Response): Promise<void> =>
         const response = await anthropic.messages.create({
             model: CLAUDE_MODEL_NAME,
             max_tokens: 1024,
-            system: SYSTEM_PROMPT,
+            system: CHAT_SYSTEM_PROMPT,
             messages: [
                 ...mapHistoryToClaude(history),
                 { role: 'user', content: message }
